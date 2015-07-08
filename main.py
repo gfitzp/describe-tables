@@ -39,11 +39,15 @@ if __name__ == "__main__":
             if schema:
 
                 worksheet.set_header('&LSchema: {}'.format(schema))
+                worksheet.set_footer('&RPage &P of &N')
                 worksheet.set_h_pagebreaks(pagebreaks)
                 worksheet.set_landscape()
                 worksheet.fit_to_pages(1, 0)
                 
-                worksheet.set_column(0, 0, field_columnwidth)
+                # increase the table and field widths by 10% when sizing columns
+                worksheet.set_column(0, 0, field_columnwidth * 1.1)
+                worksheet.set_column(2, 2, 10.29)
+                worksheet.set_column(3, 3, type_columnwidth * 1.1)
                 
                 workbook.close()
 
@@ -58,8 +62,8 @@ if __name__ == "__main__":
             # each output file starts at the first row
             row = 0
 
-            table_columnwidth = 0
             field_columnwidth = 0
+            type_columnwidth = 0
             
 
         table = structure.group('table')
@@ -102,15 +106,41 @@ if __name__ == "__main__":
             col = 0            
             row += 1
 
+            table_ddl.readline()
+            table_ddl.readline()
 
-            # write the field details            
-            worksheet.write(row, col, table)
+            field = ''
 
-            if len(table) > field_columnwidth:
-                field_columnwidth = len(table)
 
-            # move on to the next row after writing all the details about a field
-            row += 1
+            # read through all of the column names for that table
+            
+            while True:
+                
+                field = table_ddl.readline()
+
+                if field == ')\n':
+                    break
+
+                print(field)
+
+                definition = re.match("^\s+(?P<column>\S+)\s+(?P<type>(\S+\(.*\)|[^\s,]+))(,|\s+)?", field)
+
+                # write the field details            
+                worksheet.write(row, 0, definition.group('column'))
+
+                if re.search('NOT NULL', field):
+                    worksheet.write(row, 2, "NOT NULL")
+                    
+                worksheet.write(row, 3, definition.group('type'))
+
+                if len(definition.group('column')) > field_columnwidth:
+                    field_columnwidth = len(definition.group('column'))
+
+                if len(definition.group('type')) > type_columnwidth:
+                    type_columnwidth = len(definition.group('type'))
+
+                # move on to the next row after writing all the details about a field
+                row += 1
             
 
             row += 3
@@ -123,11 +153,14 @@ if __name__ == "__main__":
         print()
 
     worksheet.set_header('&LSchema: {}'.format(schema))
+    worksheet.set_footer('&RPage &P of &N')
     worksheet.set_h_pagebreaks(pagebreaks)
     worksheet.set_landscape()
     worksheet.fit_to_pages(1, 0)
 
     # increase the table and field widths by 10% when sizing columns
     worksheet.set_column(0, 0, field_columnwidth * 1.1)
+    worksheet.set_column(2, 2, 10.29)
+    worksheet.set_column(3, 3, type_columnwidth * 1.1)
     
     workbook.close()
