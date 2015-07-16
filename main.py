@@ -1,10 +1,13 @@
 import os
+import pprint
 import re
 import xlsxwriter
 
 if __name__ == "__main__":
 
-    column_names = ['Primary Key', 'Null?', 'Data Type', 'Default', 'Description']
+    p = pprint.PrettyPrinter()
+
+    column_names = ['Key', 'Constraint', 'Data Type', 'Default', 'Description']
 
 
     # change to directory with table definition files
@@ -17,150 +20,249 @@ if __name__ == "__main__":
     # get a list of all the files in the directory
     
     filelist = os.listdir()
+    
 
-
-    schema = None
+    ddl = {}
 
 
     # iterate through each of the table definition files
 
-    for file in filelist:
+    for outputfile in filelist:
+
+        with open(outputfile, 'r') as file:
+
+            for line in file:
+
+                if re.match("^CREATE TABLE", line):
 
 
-        # extract the schema name and table name from the file name
+                    # if there is a '.' in the line, parse schema.table from line
+                    
+                    if "." in line:
+
+                        structure = re.match("^\s*CREATE TABLE ((?P<schema>.+?(?=\.))\.)?(?P<table>.+?(?=(\.|\s|$|\()))", line)
+
+                        schema = structure.group('schema')
+                        table = structure.group('table')
+
+
+                    # parse the schema from the file name, and the table from the CREATE TABLE line
+                    
+                    else:
+                        
+                        structure = re.match("^(?P<schema>[^\.]+)\.", outputfile)
+
+                        schema = structure.group('schema')
+
+                        structure = re.match("^\s*CREATE TABLE (?P<table>.+?(?=(\.|\s|$|\()))", line)
+
+                        table = structure.group('table')
+
+
+                    # if the schema does not already exist in our data dictionary, create it
+                    if not ddl.get(schema):
+                        ddl[schema] = {}
+
+                    # if the table does not already exist in our data dictionary, create it
+                    if not ddl[schema].get(table):
+                        ddl[schema][table] = []
+
+
+                    line = next(file)
+
+                        
+                    # until we reach a close parenthesis, read each line and parse out column names and attributes
+                    while True:
+
+                        line = next(file)
+
+                        if re.match("^\)", line):
+                            break
+                        
+                        definition = re.match("^\s*(?P<column>\S+)\s+(?P<datatype>.+?(?=($|,$|\s+NOT NULL|\s+DEFAULT)))(\s+DEFAULT\s(?P<default>(\'.+\'|.+?)(?=(,$|\s+NOT NULL))))?(\s+(?P<constraint>NOT NULL)(?=(,$|\s+)))?", line)
+
+                        ddl[schema][table].append(definition.groupdict())
+
+                elif re.match("^ALTER TABLE", line):
+
+                    if "." in line:
+
+                        structure = re.match("^\s*ALTER TABLE ((?P<schema>.+?(?=\.))\.)?(?P<table>.+?(?=(\.|\s|$|\()))", line)
+
+                        schema = structure.group('schema')
+                        table = structure.group('table')
+
+
+                    # parse the schema from the file name, and the table from the CREATE TABLE line
+                    
+                    else:
+                        
+                        structure = re.match("^(?P<schema>[^\.]+)\.", outputfile)
+
+                        schema = structure.group('schema')
+
+                        structure = re.match("^\s*ALTER TABLE (?P<table>.+?(?=(\.|\s|$|\()))", line)
+
+                        table = structure.group('table')
+
+                    while True:
+
+                        line = next(file)
+
+                        if "PRIMARY KEY" in line:
+
+                            line = next(file)
+
+                            constraints = re.match("\s*\((?P<primary_keys>.+?(?=\)))", line)
+
+                            primary_keys = constraints.group('primary_keys')
+
+                            while " " in primary_keys:
+
+                                primary_keys = primary_keys.replace(" ", "")
+
+                            primary_keys = primary_keys.split(",")
+
+                            for field in ddl[schema][table]:
+
+                                if field.get('column') in primary_keys:
+
+                                    field['key'] = 'PRIMARY KEY'
+
+                            if ";" in line:
+                                break
+
+                        elif "FOREIGN KEY" in line:
+
+                            constraints = re.match("\s*FOREIGN KEY\s*\((?P<foreign_key>.+?(?=\)))", line)
+
+                            foreign_key = constraints.group('foreign_key')
+
+                            line = next(file)
+
+                            description = re.match("\s*REFERENCES\s(?P<foreign_reference>.+(?=$))", line)
+
+                            for field in ddl[schema][table]:
+
+                                if foreign_key == field.get('column'):
+
+                                    field['key'] = 'FOREIGN KEY'
+                                    field['description'] = "References {}".format(description.group('foreign_reference'))
+
+                            if ";" in line:
+                                break
+                            
+
+                        if ";" in line:
+                            break
+
+        file.close()
+
+##    p.pprint(ddl)
+
+    for schema in ddl:
+
+        workbook = xlsxwriter.Workbook('{}.xlsx'.format(schema.upper()))
+
+        worksheet = workbook.add_worksheet()
+
+        pagebreaks = []
+
+        columnwidth = 0
+        keywidth = 3
+        constraintwidth = 10
+        datatypewidth = 9
+        defaultwidth = 7
+        descriptionwidth = 11
         
-        structure = re.match("(?P<schema>^[^\.]+)\.(?P<table>[^\.]+)", file)
 
+        # each output file starts at the first row
+        row = 0
 
-        # if it's a new schema, close the current schema output file and start a new one
-        
-        if structure.group('schema') != schema:
+        # start output at the first column
+        col = 0
 
-            if schema:
+        for table in sorted(ddl[schema]):
 
-                worksheet.set_header('&LSchema: {}'.format(schema))
-                worksheet.set_footer('&RPage &P of &N')
-                worksheet.set_h_pagebreaks(pagebreaks)
-                worksheet.set_landscape()
-                worksheet.fit_to_pages(1, 0)
-                
-                # increase the table and field widths by 10% when sizing columns
-                worksheet.set_column(0, 0, field_columnwidth * 1.1)
-                worksheet.set_column(2, 2, 10.29)
-                worksheet.set_column(3, 3, type_columnwidth * 1.1)
-                
-                workbook.close()
-
-            schema = structure.group('schema')
-
-            workbook = xlsxwriter.Workbook('{}.xlsx'.format(schema))
-
-            worksheet = workbook.add_worksheet()
-
-            pagebreaks = []
-
-            # each output file starts at the first row
-            row = 0
-
-            field_columnwidth = 0
-            type_columnwidth = 0
-            
-
-        table = structure.group('table')
-
-
-        # open the table definition file
-
-        with open(file, 'r') as table_ddl:
-
-            print("Opening {}...".format(file))
-            print()
-
-
-            # start output at the first column
+            # start writing the field details at the first column of the next row
             col = 0
-
-
+            
             # write the header row
-
             worksheet.write(row, col, table, workbook.add_format({'bold': True, 'align': 'left', 'bottom': 2}))
 
-            if len(table) > field_columnwidth:
-                field_columnwidth = len(table)
-
             col += 1
-            
+
             for header in (column_names):
 
                 worksheet.write(row, col, header, workbook.add_format({'bold': True, 'align': 'center', 'bottom': 2}))
 
                 col += 1
-                
-  
-            # add pagebreak after each set of header rows
-            if row > 0:
-                pagebreaks.append(row)
 
-
-            # start writing the field details at the first column of the next row
-            col = 0            
+                        
             row += 1
 
-            table_ddl.readline()
-            table_ddl.readline()
+            for field in ddl[schema][table]:
 
-            field = ''
+                # start writing the field details at the first column of the next row
+                col = 0
 
+                worksheet.write(row, col, field.get('column'), workbook.add_format({'bottom': 7, 'left': 7, 'right': 7}))
 
-            # read through all of the column names for that table
-            
-            while True:
-                
-                field = table_ddl.readline()
-
-                if field == ')\n':
-                    break
-
-                print(field)
-
-                definition = re.match("^\s+(?P<column>\S+)\s+(?P<type>(\S+\(.*\)|[^\s,]+))(,|\s+)?", field)
-
-                # write the field details            
-                worksheet.write(row, 0, definition.group('column'))
-
-                if re.search('NOT NULL', field):
-                    worksheet.write(row, 2, "NOT NULL")
+                if field.get('column') and len(field.get('column')) > columnwidth:
+                    columnwidth = len(field.get('column'))
                     
-                worksheet.write(row, 3, definition.group('type'))
+                col += 1
 
-                if len(definition.group('column')) > field_columnwidth:
-                    field_columnwidth = len(definition.group('column'))
+                worksheet.write(row, col, field.get('key'), workbook.add_format({'bottom': 7, 'left': 7, 'right': 7}))
 
-                if len(definition.group('type')) > type_columnwidth:
-                    type_columnwidth = len(definition.group('type'))
+                if field.get('key') and len(field.get('key')) > keywidth:
+                    keywidth = len(field.get('key'))
+                    
+                col += 1
 
-                # move on to the next row after writing all the details about a field
+                worksheet.write(row, col, field.get('constraint'), workbook.add_format({'bottom': 7, 'left': 7, 'right': 7}))
+
+                if field.get('constraint') and len(field.get('constraint')) > constraintwidth:
+                    constraintwidth = len(field.get('constraint'))
+                    
+                col += 1
+
+                worksheet.write(row, col, field.get('datatype'), workbook.add_format({'bottom': 7, 'left': 7, 'right': 7}))
+
+                if field.get('datatype') and len(field.get('datatype')) > datatypewidth:
+                    datatypewidth = len(field.get('datatype'))
+                    
+                col += 1
+
+                worksheet.write(row, col, field.get('default'), workbook.add_format({'bottom': 7, 'left': 7, 'right': 7}))
+
+                if field.get('default') and len(field.get('default')) > defaultwidth:
+                    defaultwidth = len(field.get('default'))
+                    
+                col += 1
+
+                worksheet.write(row, col, field.get('description'), workbook.add_format({'bottom': 7, 'left': 7, 'right': 7}))
+
+                if field.get('description') and len(field.get('description')) > descriptionwidth:
+                    descriptionwidth = len(field.get('description'))
+                    
                 row += 1
-            
 
             row += 3
+            pagebreaks.append(row)
 
-        table_ddl.close()
-        print("{} closed.".format(file))
+        worksheet.set_header('&LSchema: {}'.format(schema.upper()))
+        worksheet.set_footer('&RPage &P of &N')
+        worksheet.set_h_pagebreaks(pagebreaks)
+        worksheet.set_landscape()
+        worksheet.fit_to_pages(1, 0)
+
+
+        worksheet.set_column(0, 0, columnwidth * 1.1)
+        worksheet.set_column(1, 1, keywidth * 1.1)
+        worksheet.set_column(2, 2, constraintwidth * 1.1)
+        worksheet.set_column(3, 3, datatypewidth * 1.1)
+        worksheet.set_column(4, 4, defaultwidth * 1.1)
+        worksheet.set_column(5, 5, descriptionwidth * 1.1)
         
-        print()
-        print("====================")
-        print()
-
-    worksheet.set_header('&LSchema: {}'.format(schema))
-    worksheet.set_footer('&RPage &P of &N')
-    worksheet.set_h_pagebreaks(pagebreaks)
-    worksheet.set_landscape()
-    worksheet.fit_to_pages(1, 0)
-
-    # increase the table and field widths by 10% when sizing columns
-    worksheet.set_column(0, 0, field_columnwidth * 1.1)
-    worksheet.set_column(2, 2, 10.29)
-    worksheet.set_column(3, 3, type_columnwidth * 1.1)
-    
-    workbook.close()
+        workbook.close()
