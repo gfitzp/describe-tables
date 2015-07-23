@@ -1,6 +1,7 @@
 import os
 import pprint
 import re
+from tqdm import *
 import xlsxwriter
 
 if __name__ == "__main__":
@@ -27,20 +28,21 @@ if __name__ == "__main__":
 
     # iterate through each of the table definition files
 
-    for outputfile in filelist:
+    for outputfile in tqdm(filelist):
+
+##        print(outputfile)
 
         with open(outputfile, 'r') as file:
 
             for line in file:
 
-                if re.match("^CREATE TABLE", line):
-
+                if re.match("^CREATE.*\sTABLE\s", line):
 
                     # if there is a '.' in the line, parse schema.table from line
                     
-                    if "." in line:
+                    if re.match("\.", line):
 
-                        structure = re.match("^\s*CREATE TABLE ((?P<schema>.+?(?=\.))\.)?(?P<table>.+?(?=(\.|\s|$|\()))", line)
+                        structure = re.match("^\s*CREATE.*\sTABLE\s((?P<schema>.+?(?=\.))\.)?(?P<table>.+?(?=(\.|\s|$|\()))", line)
 
                         schema = structure.group('schema')
                         table = structure.group('table')
@@ -50,11 +52,18 @@ if __name__ == "__main__":
                     
                     else:
                         
-                        structure = re.match("^(?P<schema>[^\.]+)\.", outputfile)
+                        structure = re.match("^(?P<schema>.+(?=\..+\.sql))", outputfile)
 
                         schema = structure.group('schema')
+                        
+                        structure = re.match("^CREATE.*\sTABLE\s\"?(?P<table>.+?(?=(\.|\s|$|\(|\")))", line)
+##                        print(line)
 
-                        structure = re.match("^\s*CREATE TABLE (?P<table>.+?(?=(\.|\s|$|\()))", line)
+##                        if schema == 'dbsnmp':
+##                            print(line)
+##
+##                        if schema == 'dbsnmp':
+##                            print("parsing table / schema from line")
 
                         table = structure.group('table')
 
@@ -70,18 +79,26 @@ if __name__ == "__main__":
 
                     line = next(file)
 
-                        
-                    # until we reach a close parenthesis, read each line and parse out column names and attributes
-                    while True:
+                    if re.match("^\(", line):
+ 
+                        # until we reach a close parenthesis, read each line and parse out column names and attributes
+                        while True:
 
-                        line = next(file)
+                            line = next(file)
 
-                        if re.match("^\)", line):
-                            break
-                        
-                        definition = re.match("^\s*(?P<column>\S+)\s+(?P<datatype>.+?(?=($|,$|\s+NOT NULL|\s+DEFAULT)))(\s+DEFAULT\s(?P<default>(\'.+\'|.+?)(?=(,$|\s+NOT NULL))))?(\s+(?P<constraint>NOT NULL)(?=(,$|\s+)))?", line)
+                            if re.match("^\)", line) or "PRIMARY KEY" in line:
+                                break
+                            
+                            definition = re.match("^\s*(?P<column>\S+)\s+(?P<datatype>.+?(?=($|,$|\s+NOT NULL|\s+DEFAULT)))(\s+DEFAULT\s(?P<default>(\'.+\'|.+?)(?=(,$|\s+NOT NULL))))?(\s+(?P<constraint>NOT NULL)(?=(,$|\s+)))?", line)
 
-                        ddl[schema][table].append(definition.groupdict())
+##                            if schema == 'dbsnmp':
+##                                print(schema)
+##                                print(table)
+##                                print(definition.groupdict())
+
+##                            print(definition.groupdict())
+
+                            ddl[schema][table].append(definition.groupdict())
 
                 elif re.match("^ALTER TABLE", line):
 
@@ -97,13 +114,21 @@ if __name__ == "__main__":
                     
                     else:
                         
-                        structure = re.match("^(?P<schema>[^\.]+)\.", outputfile)
+                        structure = re.match("^(?P<schema>.+(?=\..+\.sql))", outputfile)
 
                         schema = structure.group('schema')
 
-                        structure = re.match("^\s*ALTER TABLE (?P<table>.+?(?=(\.|\s|$|\()))", line)
+                        structure = re.match("^\s*ALTER TABLE \"?(?P<table>.+?(?=(\.|\s|$|\(|\")))", line)
 
                         table = structure.group('table')
+
+                    # if the schema does not already exist in our data dictionary, create it
+                    if not ddl.get(schema):
+                        ddl[schema] = {}
+
+                    # if the table does not already exist in our data dictionary, create it
+                    if not ddl[schema].get(table):
+                        ddl[schema][table] = []
 
                     while True:
 
@@ -160,7 +185,14 @@ if __name__ == "__main__":
 
 ##    p.pprint(ddl)
 
-    for schema in ddl:
+    print("{} files read. Now creating output files...".format(len(filelist)))
+    print()
+
+    if not os.path.exists('Data Definitions'):
+        os.makedirs('Data Definitions')
+    os.chdir('Data Definitions')
+
+    for schema in tqdm(ddl):
 
         workbook = xlsxwriter.Workbook('{}.xlsx'.format(schema.upper()))
 
