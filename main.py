@@ -1,3 +1,25 @@
+# The MIT License (MIT)
+# 
+# Copyright © 2015 Glenn Fitzpatrick
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
 import os
 import pprint
 import re
@@ -86,10 +108,33 @@ if __name__ == "__main__":
 
                             line = next(file)
 
-                            if re.match("^\)", line) or "PRIMARY KEY" in line:
+                            if re.match("^\)", line):
                                 break
-                            
-                            definition = re.match("^\s*(?P<column>\S+)\s+(?P<datatype>.+?(?=($|,$|\s+NOT NULL|\s+DEFAULT)))(\s+DEFAULT\s(?P<default>(\'.+\'|.+?)(?=(,$|\s+NOT NULL))))?(\s+(?P<constraint>NOT NULL)(?=(,$|\s+)))?", line)
+
+                            elif "PRIMARY KEY" in line:
+                                line = next(file)
+
+                                constraints = re.match("\s*\((?P<primary_keys>.+?(?=\)))", line)
+
+                                primary_keys = constraints.group('primary_keys')
+
+                                while " " in primary_keys:
+
+                                    primary_keys = primary_keys.replace(" ", "")
+
+                                primary_keys = primary_keys.split(",")
+
+                                for field in ddl[schema][table]:
+
+                                    if field.get('column') in primary_keys:
+
+                                        field['key'] = 'PRIMARY KEY'
+
+                                if ";" in line:
+                                    break
+
+                            else:
+                                definition = re.match("^\s*(?P<column>\S+)\s+(?P<datatype>.+?(?=($|,\s+$|\s+NOT NULL|\s+DEFAULT)))(\s+DEFAULT\s(?P<default>(\'.+\'|.+?)(?=(,$|\s+NOT NULL))))?(\s+(?P<constraint>NOT NULL)(?=(,$|\s+)))?", line)
 
 ##                            if schema == 'dbsnmp':
 ##                                print(schema)
@@ -98,7 +143,7 @@ if __name__ == "__main__":
 
 ##                            print(definition.groupdict())
 
-                            ddl[schema][table].append(definition.groupdict())
+                                ddl[schema][table].append(definition.groupdict())
 
                 elif re.match("^ALTER TABLE", line):
 
@@ -222,6 +267,9 @@ if __name__ == "__main__":
             # write the header row
             worksheet.write(row, col, table, workbook.add_format({'bold': True, 'align': 'left', 'bottom': 2}))
 
+            if len(table) > columnwidth:
+                columnwidth = len(table)
+
             col += 1
 
             for header in (column_names):
@@ -290,11 +338,11 @@ if __name__ == "__main__":
         worksheet.fit_to_pages(1, 0)
 
 
-        worksheet.set_column(0, 0, columnwidth * 1.1)
-        worksheet.set_column(1, 1, keywidth * 1.1)
-        worksheet.set_column(2, 2, constraintwidth * 1.1)
-        worksheet.set_column(3, 3, datatypewidth * 1.1)
-        worksheet.set_column(4, 4, defaultwidth * 1.1)
-        worksheet.set_column(5, 5, descriptionwidth * 1.1)
+        worksheet.set_column(0, 0, columnwidth * 1.25)
+        worksheet.set_column(1, 1, keywidth * 1.25)
+        worksheet.set_column(2, 2, constraintwidth * 1.25)
+        worksheet.set_column(3, 3, datatypewidth * 1.25)
+        worksheet.set_column(4, 4, defaultwidth * 1.25)
+        worksheet.set_column(5, 5, descriptionwidth * 1.25)
         
         workbook.close()
