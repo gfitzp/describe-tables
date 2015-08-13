@@ -2,11 +2,11 @@
 
 Given multiple SQL data definition files, read through each and export the table definitions in spreadsheets by schema for documentation.
 
+Currently developed to use SQL DDL scripts exported from Toad for Oracle Professional 10.6.1.3. Other SQL DDL scripts may work, but have not been tested.
+
 
 ----
 ## Requirements
-
-Currently developed to use SQL DDL scripts exported from Toad for Oracle Professional 10.6.1.3. Other SQL DDL scripts may work, but have not been tested.
 
 * [Python 3.3+](https://www.python.org/downloads/)
 * [pip](https://pypi.python.org/pypi/pip)
